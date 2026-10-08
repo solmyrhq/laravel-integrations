@@ -29,6 +29,7 @@ jobs:
 
         steps:
             - name: Checkout repository
+              id: checkout
               uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
               with:
                   fetch-depth: 1
@@ -39,6 +40,12 @@ jobs:
             - name: Run Claude Code Review
               id: claude-review
               uses: anthropics/claude-code-action@756cc22e19660d20e8cc9496b4f242475a7f7790 # v1.0.235
+              env:
+                  # Under this action, Claude Code ends the run when the model
+                  # returns its final result, even if subagents started in the
+                  # background are still working, so their findings are never
+                  # posted.
+                  CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1"
               with:
                   claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 
@@ -80,3 +87,9 @@ jobs:
               env:
                   EXECUTION_FILE: ${{ steps.claude-review.outputs.execution_file }}
               run: jq 'map(select(.type == "result")) | last | {subtype, is_error, result, errors}' "$EXECUTION_FILE"
+
+            # If the job is cancelled while claude-code-action runs, the action's revoke step can be skipped, and the
+            # app token stays valid for up to an hour.
+            - name: Remove the app token from the checkout
+              if: always() && steps.checkout.outcome == 'success'
+              run: git remote set-url origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git"
