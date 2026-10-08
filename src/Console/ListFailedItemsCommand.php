@@ -8,6 +8,7 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use Integrations\Console\Concerns\ParsesLimitOption;
+use Integrations\Models\Builders\IntegrationSyncItemBuilder;
 use Integrations\Models\IntegrationSyncItem;
 use Throwable;
 
@@ -33,28 +34,8 @@ class ListFailedItemsCommand extends Command
             ->select(['id', 'integration_id', 'event_class', 'external_id', 'error', 'attempts', 'created_at'])
             ->orderByDesc('id');
 
-        $integrationOption = $this->option('integration');
-        if (is_string($integrationOption) && $integrationOption !== '') {
-            if (! ctype_digit($integrationOption) || (int) $integrationOption <= 0) {
-                $this->error('The --integration option must be a positive integer id.');
-
-                return self::FAILURE;
-            }
-
-            $query->forIntegration((int) $integrationOption);
-        }
-
-        $sinceOption = $this->option('since');
-        if (is_string($sinceOption) && $sinceOption !== '') {
-            try {
-                $since = Carbon::parse($sinceOption);
-            } catch (Throwable) {
-                $this->error("Invalid --since value '{$sinceOption}'. Use a parseable date or datetime.");
-
-                return self::FAILURE;
-            }
-
-            $query->where('created_at', '>=', $since);
+        if (! $this->applyIntegrationFilter($query) || ! $this->applySinceFilter($query)) {
+            return self::FAILURE;
         }
 
         $limit = $this->parseLimit(self::DEFAULT_LIMIT);
@@ -92,5 +73,49 @@ class ListFailedItemsCommand extends Command
         $this->warnIfLimitReached($items->count(), $limit, 'failed items');
 
         return self::SUCCESS;
+    }
+
+    /**
+     * @param  IntegrationSyncItemBuilder<IntegrationSyncItem>  $query
+     */
+    private function applyIntegrationFilter(IntegrationSyncItemBuilder $query): bool
+    {
+        $integrationOption = $this->option('integration');
+        if (! is_string($integrationOption) || $integrationOption === '') {
+            return true;
+        }
+
+        if (! ctype_digit($integrationOption) || (int) $integrationOption <= 0) {
+            $this->error('The --integration option must be a positive integer id.');
+
+            return false;
+        }
+
+        $query->forIntegration((int) $integrationOption);
+
+        return true;
+    }
+
+    /**
+     * @param  IntegrationSyncItemBuilder<IntegrationSyncItem>  $query
+     */
+    private function applySinceFilter(IntegrationSyncItemBuilder $query): bool
+    {
+        $sinceOption = $this->option('since');
+        if (! is_string($sinceOption) || $sinceOption === '') {
+            return true;
+        }
+
+        try {
+            $since = Carbon::parse($sinceOption);
+        } catch (Throwable) {
+            $this->error("Invalid --since value '{$sinceOption}'. Use a parseable date or datetime.");
+
+            return false;
+        }
+
+        $query->where('created_at', '>=', $since);
+
+        return true;
     }
 }

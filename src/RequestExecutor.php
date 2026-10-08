@@ -23,9 +23,9 @@ use Integrations\Support\Config;
 use Integrations\Support\EndpointPattern;
 use Integrations\Support\FailureClassifier;
 use Integrations\Support\JsonBody;
+use Integrations\Support\ModelKey;
 use Integrations\Support\Redactor;
 use Integrations\Support\ResponseHelper;
-use InvalidArgumentException;
 use RuntimeException;
 use Spatie\LaravelData\Data;
 use Throwable;
@@ -188,10 +188,8 @@ final class RequestExecutor
     ): mixed {
         $startTime = microtime(true);
         $responseSuccess = false;
-        $responseCode = null;
         $responseData = null;
         $error = null;
-        $result = null;
         $failureClass = null;
 
         try {
@@ -382,7 +380,7 @@ final class RequestExecutor
             'provider_request_id' => $this->context?->providerRequestId(),
             'retry_of' => $retryOfId,
             'related_type' => $relatedTo !== null ? $relatedTo->getMorphClass() : null,
-            'related_id' => $relatedTo !== null ? self::keyToString($relatedTo->getKey()) : null,
+            'related_id' => $relatedTo !== null ? ModelKey::toString($relatedTo->getKey()) : null,
             'response_code' => $responseCode,
             'response_data' => $responseData,
             'response_success' => $responseSuccess,
@@ -510,14 +508,5 @@ final class RequestExecutor
         }
 
         return $requestData;
-    }
-
-    private static function keyToString(mixed $key): string
-    {
-        if (is_int($key) || is_string($key)) {
-            return (string) $key;
-        }
-
-        throw new InvalidArgumentException('Model key must be a string or integer.');
     }
 }

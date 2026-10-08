@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## 6.5.0
+
+- Change: [`IntegrationTestCase`](/testing/testing#integrationtestcase) sets laravel-data's `validation_strategy` to `Always`. With laravel-data's default, `OnlyRequests`, `Data::from()` validates only when it hydrates a Data class from an HTTP request, so response Data classes were never validated in an adapter's tests. A consumer that sets `Always` validates every response, and a response that passed the adapter's tests could fail in production with a `SchemaDriftException`. For example, Zendesk sends an empty subject for a ticket created from an email with no subject. That ticket failed `ZendeskTicketData` validation, and the Zendesk incremental sync stopped at the page that contained it. A test that extends `IntegrationTestCase` now fails if its fixture has an empty string or an empty array in a non-nullable property of a Data class. Only tests use `IntegrationTestCase`, so this setting has no effect on production code. See the [upgrade guide](/about/upgrade-guide).
+- Fix: [`integrations:test`](/reference/artisan-commands#integrations-test) counted an integration twice in its "Tested" total when the provider's health check threw an exception. Now the command counts that integration once.
+- Docs: the [`IntegrationTestCase`](/testing/testing#integrationtestcase) section said that the class activates the fake in `setUp()` and provides `$this->integration`, but it does neither. The [`CreatesIntegration`](/testing/testing#createsintegration-trait) example called `createIntegration()` without the provider class, which is a required argument. Both sections are corrected.
+
 ## 6.4.0
 
 `integrations:recover-webhooks` now dispatches a new job for a webhook stuck in `pending`, and it can retry a failed webhook.

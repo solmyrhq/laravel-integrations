@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Integrations\Reporting;
 
 use Carbon\CarbonInterface;
+use Illuminate\Support\Collection;
 use Integrations\Enums\FailureClass;
 use Integrations\Models\Integration;
 use Integrations\Models\IntegrationLog;
 use Integrations\Support\JsonPathExtractor;
+use stdClass;
 
 /**
  * Computes a {@see FailureSummary} for one integration over a window. The
@@ -253,7 +255,30 @@ final class FailureReporter
             ->toBase()
             ->pluck('items', 'operation');
 
-        /** @var array<string, array{total: int, successful: int, partial: int, failed: int}> $acc */
+        $result = [];
+
+        foreach (self::statusCountsByOperation($rows) as $operation => $counts) {
+            $items = $distinctItems[$operation] ?? 0;
+
+            $result[$operation] = new OperationFailureBreakdown(
+                operation: $operation,
+                total: $counts['total'],
+                successful: $counts['successful'],
+                partial: $counts['partial'],
+                failed: $counts['failed'],
+                distinctItems: is_numeric($items) ? (int) $items : 0,
+            );
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param  Collection<int, stdClass>  $rows
+     * @return array<string, array{total: int, successful: int, partial: int, failed: int}>
+     */
+    private static function statusCountsByOperation(Collection $rows): array
+    {
         $acc = [];
 
         foreach ($rows as $row) {
@@ -270,30 +295,18 @@ final class FailureReporter
             $n = (int) $count;
             $acc[$operation]['total'] += $n;
 
-            if ($status === IntegrationLog::STATUS_SUCCESS) {
-                $acc[$operation]['successful'] += $n;
-            } elseif ($status === IntegrationLog::STATUS_PARTIAL) {
-                $acc[$operation]['partial'] += $n;
-            } elseif ($status === IntegrationLog::STATUS_FAILED) {
-                $acc[$operation]['failed'] += $n;
+            $statusKey = match ($status) {
+                IntegrationLog::STATUS_SUCCESS => 'successful',
+                IntegrationLog::STATUS_PARTIAL => 'partial',
+                IntegrationLog::STATUS_FAILED => 'failed',
+                default => null,
+            };
+
+            if ($statusKey !== null) {
+                $acc[$operation][$statusKey] += $n;
             }
         }
 
-        $result = [];
-
-        foreach ($acc as $operation => $counts) {
-            $items = $distinctItems[$operation] ?? 0;
-
-            $result[$operation] = new OperationFailureBreakdown(
-                operation: $operation,
-                total: $counts['total'],
-                successful: $counts['successful'],
-                partial: $counts['partial'],
-                failed: $counts['failed'],
-                distinctItems: is_numeric($items) ? (int) $items : 0,
-            );
-        }
-
-        return $result;
+        return $acc;
     }
 }

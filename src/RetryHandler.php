@@ -38,13 +38,7 @@ class RetryHandler
         int $defaultBaseDelayMs = 1_000,
         ?Closure $onRetry = null,
     ): mixed {
-        if ($maxAttempts < 1) {
-            throw new InvalidArgumentException('$maxAttempts must be at least 1.');
-        }
-
-        if ($rateLimitDelayMs < 0 || $serverErrorBaseDelayMs < 0 || $defaultBaseDelayMs < 0) {
-            throw new InvalidArgumentException('Delay values must be non-negative.');
-        }
+        self::assertValidArguments($maxAttempts, $rateLimitDelayMs, $serverErrorBaseDelayMs, $defaultBaseDelayMs);
 
         for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
             try {
@@ -52,13 +46,7 @@ class RetryHandler
             } catch (Throwable $e) {
                 $statusCode = ResponseHelper::extractStatusCode($e);
 
-                if (! self::isRetryableInternal($e, $statusCode, $retryableStatusCodes)) {
-                    throw $e;
-                }
-
-                if ($attempt >= $maxAttempts) {
-                    throw new RetriesExhaustedException($attempt - 1, $e);
-                }
+                self::throwUnlessRetrying($e, $statusCode, $retryableStatusCodes, $attempt, $maxAttempts);
 
                 if ($onRetry !== null) {
                     ($onRetry)($attempt, $e);
@@ -105,6 +93,42 @@ class RetryHandler
         $statusCode = ResponseHelper::extractStatusCode($e);
 
         return self::calculateDelay($statusCode, $attempt, 30_000, 2_000, 1_000);
+    }
+
+    private static function assertValidArguments(
+        int $maxAttempts,
+        int $rateLimitDelayMs,
+        int $serverErrorBaseDelayMs,
+        int $defaultBaseDelayMs,
+    ): void {
+        if ($maxAttempts < 1) {
+            throw new InvalidArgumentException('$maxAttempts must be at least 1.');
+        }
+
+        if ($rateLimitDelayMs < 0 || $serverErrorBaseDelayMs < 0 || $defaultBaseDelayMs < 0) {
+            throw new InvalidArgumentException('Delay values must be non-negative.');
+        }
+    }
+
+    /**
+     * @param  list<int>  $retryableStatusCodes
+     *
+     * @throws Throwable
+     */
+    private static function throwUnlessRetrying(
+        Throwable $e,
+        ?int $statusCode,
+        array $retryableStatusCodes,
+        int $attempt,
+        int $maxAttempts,
+    ): void {
+        if (! self::isRetryableInternal($e, $statusCode, $retryableStatusCodes)) {
+            throw $e;
+        }
+
+        if ($attempt >= $maxAttempts) {
+            throw new RetriesExhaustedException($attempt - 1, $e);
+        }
     }
 
     /**
@@ -193,24 +217,26 @@ class RetryHandler
             }
 
             $header = $response->getHeaderLine('Retry-After');
-            if ($header === '') {
-                break;
-            }
 
-            if (is_numeric($header)) {
-                return (int) ((float) $header * 1000);
-            }
-
-            try {
-                $retryAt = Carbon::parse($header);
-                $delaySeconds = now()->diffInSeconds($retryAt, absolute: false);
-
-                return $delaySeconds > 0 ? (int) ($delaySeconds * 1000) : null;
-            } catch (Throwable) {
-                return null;
-            }
+            return $header === '' ? null : self::parseRetryAfterMs($header);
         }
 
         return null;
+    }
+
+    private static function parseRetryAfterMs(string $header): ?int
+    {
+        if (is_numeric($header)) {
+            return (int) ((float) $header * 1000);
+        }
+
+        try {
+            $retryAt = Carbon::parse($header);
+            $delaySeconds = now()->diffInSeconds($retryAt, absolute: false);
+
+            return $delaySeconds > 0 ? (int) ($delaySeconds * 1000) : null;
+        } catch (Throwable) {
+            return null;
+        }
     }
 }

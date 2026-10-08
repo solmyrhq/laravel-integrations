@@ -65,20 +65,8 @@ final class CircuitBreaker
 
     public function enforce(): void
     {
-        $override = $this->override();
-
-        if ($override === CircuitOverride::Disabled || $override === CircuitOverride::ForcedClosed) {
+        if ($this->overrideBypassesBreaker()) {
             return;
-        }
-
-        if ($override === CircuitOverride::ForcedOpen) {
-            // Held open by an operator. Never enters half-open or claims a
-            // probe slot, so it stays open until the override is cleared.
-            throw new CircuitOpenException(
-                $this->integration,
-                CarbonImmutable::now(),
-                Config::circuitBreakerCooldownSeconds(),
-            );
         }
 
         if (! Config::circuitBreakerEnabled()) {
@@ -95,18 +83,9 @@ final class CircuitBreaker
         $openedAt = $state['opened_at'];
 
         if ($state['state'] === self::STATE_HALF_OPEN) {
-            // Another request is mid-probe: only the slot holder gets
-            // through. If the slot expired (probe crashed mid-flight), we
-            // can claim it as the new probe; otherwise back off.
-            if (Cache::add($this->probeKey(), 1, $cooldown * 2)) {
-                return;
-            }
+            $this->claimHalfOpenProbe($openedAt, $cooldown);
 
-            throw new CircuitOpenException(
-                $this->integration,
-                CarbonImmutable::createFromTimestamp($openedAt ?? (int) now()->timestamp),
-                $cooldown,
-            );
+            return;
         }
 
         // STATE_OPEN: still inside the cooldown window?
@@ -130,6 +109,45 @@ final class CircuitBreaker
         }
 
         $this->writeState(self::STATE_HALF_OPEN, 0, $openedAt ?? (int) now()->timestamp);
+    }
+
+    /**
+     * @throws CircuitOpenException
+     */
+    private function overrideBypassesBreaker(): bool
+    {
+        $override = $this->override();
+
+        if ($override === CircuitOverride::ForcedOpen) {
+            // Held open by an operator. Never enters half-open or claims a
+            // probe slot, so it stays open until the override is cleared.
+            throw new CircuitOpenException(
+                $this->integration,
+                CarbonImmutable::now(),
+                Config::circuitBreakerCooldownSeconds(),
+            );
+        }
+
+        return $override === CircuitOverride::Disabled || $override === CircuitOverride::ForcedClosed;
+    }
+
+    /**
+     * @throws CircuitOpenException
+     */
+    private function claimHalfOpenProbe(?int $openedAt, int $cooldown): void
+    {
+        // Another request is mid-probe: only the slot holder gets
+        // through. If the slot expired (probe crashed mid-flight), we
+        // can claim it as the new probe; otherwise back off.
+        if (Cache::add($this->probeKey(), 1, $cooldown * 2)) {
+            return;
+        }
+
+        throw new CircuitOpenException(
+            $this->integration,
+            CarbonImmutable::createFromTimestamp($openedAt ?? (int) now()->timestamp),
+            $cooldown,
+        );
     }
 
     public function recordSuccess(): void

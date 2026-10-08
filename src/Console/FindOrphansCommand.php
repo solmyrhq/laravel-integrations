@@ -109,28 +109,39 @@ class FindOrphansCommand extends Command
 
                 $mapped = $this->mappedKeys($morphClass, array_values($keys), $integrationId);
 
-                foreach ($rows as $row) {
-                    $key = ModelKey::toString($row->getKey());
+                $orphans = [...$orphans, ...$this->unmappedRows($rows, $mapped, $createdAtColumn)];
 
-                    if (array_key_exists($key, $mapped)) {
-                        continue;
-                    }
-
-                    $createdAt = $createdAtColumn === null ? null : $row->getAttribute($createdAtColumn);
-                    $orphans[] = [
-                        $key,
-                        $createdAt instanceof \DateTimeInterface ? $createdAt->format('Y-m-d H:i:s') : '-',
-                    ];
-
-                    if (count($orphans) >= $limit) {
-                        return false;
-                    }
-                }
-
-                return true;
+                return count($orphans) < $limit;
             }, $keyName);
 
-        return $orphans;
+        return array_slice($orphans, 0, $limit);
+    }
+
+    /**
+     * @param  Collection<int, Model>  $rows
+     * @param  array<string, true>  $mapped
+     * @return list<array{0: string, 1: string}>
+     */
+    private function unmappedRows(Collection $rows, array $mapped, ?string $createdAtColumn): array
+    {
+        $unmapped = [];
+
+        foreach ($rows as $row) {
+            $key = ModelKey::toString($row->getKey());
+
+            if (! array_key_exists($key, $mapped)) {
+                $unmapped[] = [$key, $this->createdAtLabel($row, $createdAtColumn)];
+            }
+        }
+
+        return $unmapped;
+    }
+
+    private function createdAtLabel(Model $row, ?string $createdAtColumn): string
+    {
+        $createdAt = $createdAtColumn === null ? null : $row->getAttribute($createdAtColumn);
+
+        return $createdAt instanceof \DateTimeInterface ? $createdAt->format('Y-m-d H:i:s') : '-';
     }
 
     /**

@@ -28,32 +28,14 @@ class TestCommand extends Command
                 continue;
             }
 
-            try {
-                $provider = $manager->provider($integration->provider);
+            $healthy = $this->checkHealth($manager, $integration);
 
-                if (! $provider instanceof HasHealthCheck) {
-                    continue;
-                }
-
-                $tested++;
-
-                $healthy = $provider->healthCheck($integration);
-
-                if ($healthy) {
-                    $this->info("  [PASS] {$integration->name} ({$integration->provider})");
-                    $integration->recordSuccess();
-                    $passed++;
-                } else {
-                    $this->error("  [FAIL] {$integration->name} ({$integration->provider})");
-                    $integration->recordFailure(FailureClass::Upstream);
-                    $failed++;
-                }
-            } catch (\Throwable $e) {
-                $tested++;
-                $this->error("  [FAIL] {$integration->name} ({$integration->provider}): {$e->getMessage()}");
-                $integration->recordFailure(FailureClass::Upstream);
-                $failed++;
+            if ($healthy === null) {
+                continue;
             }
+
+            $tested++;
+            $healthy ? $passed++ : $failed++;
         }
 
         if ($tested === 0) {
@@ -66,5 +48,33 @@ class TestCommand extends Command
         $this->info("Tested: {$tested}, Passed: {$passed}, Failed: {$failed}");
 
         return $failed > 0 ? self::FAILURE : self::SUCCESS;
+    }
+
+    private function checkHealth(IntegrationManager $manager, Integration $integration): ?bool
+    {
+        try {
+            $provider = $manager->provider($integration->provider);
+
+            if (! $provider instanceof HasHealthCheck) {
+                return null;
+            }
+
+            if ($provider->healthCheck($integration)) {
+                $this->info("  [PASS] {$integration->name} ({$integration->provider})");
+                $integration->recordSuccess();
+
+                return true;
+            }
+
+            $this->error("  [FAIL] {$integration->name} ({$integration->provider})");
+            $integration->recordFailure(FailureClass::Upstream);
+
+            return false;
+        } catch (\Throwable $e) {
+            $this->error("  [FAIL] {$integration->name} ({$integration->provider}): {$e->getMessage()}");
+            $integration->recordFailure(FailureClass::Upstream);
+
+            return false;
+        }
     }
 }

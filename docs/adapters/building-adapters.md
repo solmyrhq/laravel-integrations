@@ -305,6 +305,24 @@ Patterns to follow:
 - Store the original API response in an `original` property for debugging.
 - Use `prepareForPipeline()` to transform raw API responses.
 - Extract nested data (attachments from HTML, fallback values, etc.) in the pipeline.
+- In `rules()`, replace the rule for each non-nullable property that the provider can send as an empty string or an empty array.
+
+### Empty strings and empty arrays
+
+laravel-data adds a `required` rule to every non-nullable property, and `required` rejects `""` and `[]`. A consumer that sets laravel-data's `validation_strategy` to `Always` validates every response. If one value is empty, validation of the whole response fails with a `SchemaDriftException`. For a list endpoint or an incremental sync, the whole page fails because of one record.
+
+If the provider can send an empty value, replace the inferred rule in `rules()`. With `present`, an empty value passes validation, but a missing key still fails:
+
+```php
+public static function rules(): array
+{
+    return [
+        'subject' => ['present', 'string'],
+    ];
+}
+```
+
+[`IntegrationTestCase`](/testing/testing#integrationtestcase) sets `validation_strategy` to `Always`, so a test whose fixture has the empty value fails, and you find the problem before a consumer does.
 
 ## Events
 

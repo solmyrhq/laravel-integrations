@@ -2,6 +2,25 @@
 
 This project follows [Semantic Versioning](https://semver.org/). Minor and patch releases will never contain breaking changes.
 
+## 6.4 to 6.5
+
+You do not need to change your code for 6.5 unless your tests extend `IntegrationTestCase`.
+
+`IntegrationTestCase` now sets laravel-data's `validation_strategy` to `Always`. If your tests extend `IntegrationTestCase`, a test can fail when its fixture has an empty string or an empty array in a non-nullable property of a Data class. For each failure, check whether the provider can send that value. If it can, override `rules()` on the Data class (see [empty strings and empty arrays](/adapters/building-adapters#empty-strings-and-empty-arrays)). If it can't, correct the fixture.
+
+To keep the old behaviour, set `data.validation_strategy` back to `OnlyRequests` in your own test case:
+
+```php
+use Spatie\LaravelData\Support\Creation\ValidationStrategy;
+
+protected function getEnvironmentSetUp($app): void
+{
+    parent::getEnvironmentSetUp($app);
+
+    $app['config']->set('data.validation_strategy', ValidationStrategy::OnlyRequests->value);
+}
+```
+
 ## 6.3 to 6.4
 
 6.4 adds a column and an index to the webhooks table. There are no breaking changes, and no code change is required.
