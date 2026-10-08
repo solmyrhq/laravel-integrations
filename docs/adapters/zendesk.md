@@ -102,7 +102,7 @@ Pass `null` (the default) to skip idempotency entirely. See [Idempotency](/core-
 
 | Class | Description |
 |-------|-------------|
-| `ZendeskTicketData` | Ticket with status, requester, assignee, custom fields, satisfaction rating, tags. Stores original API response. |
+| `ZendeskTicketData` | Ticket with status, requester, assignee, custom fields, satisfaction rating, tags. `subject` and `raw_subject` are empty strings for a ticket created from an email with no subject. Stores original API response. |
 | `ZendeskCommentData` | Comment with body (plain/HTML), attachments, via channel. Has `hasAttachments()` and `getImageAttachments()` helpers. Stores original API response. |
 | `ZendeskUserData` | User with role, org, locale, timezone, phone, photo. Handles email fallback for users without emails via `prepareForPipeline()`. Stores original API response. |
 | `ZendeskAttachmentData` | Attachment with file name, content type, size, dimensions, malware scan result, thumbnails. |

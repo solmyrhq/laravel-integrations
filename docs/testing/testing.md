@@ -177,7 +177,7 @@ class TicketSyncTest extends TestCase
 
     public function test_syncs_tickets(): void
     {
-        $integration = $this->createIntegration('github');
+        $integration = $this->createIntegration('github', GitHubProvider::class);
 
         IntegrationRequest::fake([
             'tickets.list' => ['tickets' => [['id' => 1, 'subject' => 'Bug report']]],
@@ -197,15 +197,36 @@ The trait handles creating the `Integration` model with sensible defaults (activ
 
 ### IntegrationTestCase
 
-Base test class that extends Laravel's `TestCase` with integration-specific setup and teardown. It activates the fake in `setUp()` and calls `stopFaking()` in `tearDown()`, so you don't need to manage fake lifecycle manually:
+Base test class for adapter packages, built on Orchestra Testbench. It:
+
+- registers the laravel-data and laravel-integrations service providers, and any providers that `getAdapterProviders()` returns
+- runs Laravel's default migrations and the package's migrations on an in-memory SQLite database
+- sets laravel-data's `validation_strategy` to `Always`, so `Data::from()` validates in your tests as it does for a consumer that uses that setting
+- uses the `CreatesIntegration` trait
+- deactivates the fake in `tearDown()`
+
+It doesn't activate the fake or create an integration. Do both in your test or in `setUp()`:
 
 ```php
+use Integrations\Models\Integration;
+use Integrations\Models\IntegrationRequest;
 use Integrations\Testing\IntegrationTestCase;
 
 class GitHubProviderTest extends IntegrationTestCase
 {
-    // The fake is automatically activated in setUp()
-    // An integration is available via $this->integration
+    private Integration $integration;
+
+    protected function getAdapterProviders($app): array
+    {
+        return [GitHubServiceProvider::class];
+    }
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->integration = $this->createIntegration('github', GitHubProvider::class);
+    }
 
     public function test_fetches_repository(): void
     {
@@ -238,4 +259,6 @@ class GitHubProviderTest extends IntegrationTestCase
 }
 ```
 
-Use `IntegrationTestCase` when most of your tests need an integration instance and fake -- it removes the boilerplate of setting those up in every test class.
+Use `IntegrationTestCase` as the base class for an adapter package's tests, so that you don't repeat the Testbench, database and provider setup in every test class.
+
+Because `validation_strategy` is `Always`, a test fails if its fixture has an empty string or an empty array in a non-nullable property of a Data class. Check whether the provider can send that value. If it can, override `rules()` on the Data class (see [empty strings and empty arrays](/adapters/building-adapters#empty-strings-and-empty-arrays)). If it can't, correct the fixture.

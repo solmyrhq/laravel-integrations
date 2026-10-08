@@ -138,13 +138,6 @@ parameters:
             count: 7
             path: src/IntegrationsServiceProvider.php
 
-        # DB::transaction() closure is immediately invoked; MassAssignmentException propagates correctly.
-        -
-            rawMessage: Throwing checked exception Illuminate\Database\Eloquent\MassAssignmentException in closure!
-            identifier: shipmonk.checkedExceptionInCallable
-            count: 1
-            path: src/Models/Integration.php
-
         # HTTP callback closure is immediately invoked; RequestException propagates correctly.
         -
             rawMessage: Throwing checked exception Illuminate\Http\Client\RequestException in closure!

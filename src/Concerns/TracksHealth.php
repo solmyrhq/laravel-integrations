@@ -50,52 +50,13 @@ trait TracksHealth
             return;
         }
 
-        $previousStatus = null;
-        $newStatus = null;
+        $transition = DB::transaction(fn (): ?array => $this->incrementFailuresLocked());
 
-        DB::transaction(function () use (&$previousStatus, &$newStatus): void {
-            $locked = Integration::lockForUpdate()->find($this->id);
-
-            if ($locked === null) {
-                return;
-            }
-
-            $previousStatus = $locked->health_status;
-            $failures = $locked->consecutive_failures + 1;
-
-            $disabledAfter = Config::disabledAfter();
-
-            $newStatus = match (true) {
-                $disabledAfter !== null && $failures >= $disabledAfter => HealthStatus::Disabled,
-                $failures >= Config::failingAfter() => HealthStatus::Failing,
-                $failures >= Config::degradedAfter() => HealthStatus::Degraded,
-                default => $previousStatus,
-            };
-
-            $updates = [
-                'consecutive_failures' => $failures,
-                'last_error_at' => now(),
-                'health_status' => $newStatus,
-            ];
-
-            if ($newStatus === HealthStatus::Disabled) {
-                $updates['is_active'] = false;
-            }
-
-            $locked->update($updates);
-
-            $this->fill($locked->only([
-                'consecutive_failures',
-                'last_error_at',
-                'health_status',
-                'is_active',
-            ]));
-            $this->syncOriginal();
-        });
-
-        if ($previousStatus === null || $newStatus === null) {
+        if ($transition === null) {
             return;
         }
+
+        [$previousStatus, $newStatus] = $transition;
 
         if ($newStatus === HealthStatus::Disabled && $previousStatus !== HealthStatus::Disabled) {
             IntegrationDisabled::dispatch($this);
@@ -104,5 +65,55 @@ trait TracksHealth
         if ($newStatus !== $previousStatus) {
             IntegrationHealthChanged::dispatch($this, $previousStatus, $newStatus);
         }
+    }
+
+    /**
+     * @return array{HealthStatus, HealthStatus}|null
+     */
+    private function incrementFailuresLocked(): ?array
+    {
+        $locked = Integration::lockForUpdate()->find($this->id);
+
+        if ($locked === null) {
+            return null;
+        }
+
+        $previousStatus = $locked->health_status;
+        $failures = $locked->consecutive_failures + 1;
+        $newStatus = self::healthStatusAfterFailures($failures, $previousStatus);
+
+        $updates = [
+            'consecutive_failures' => $failures,
+            'last_error_at' => now(),
+            'health_status' => $newStatus,
+        ];
+
+        if ($newStatus === HealthStatus::Disabled) {
+            $updates['is_active'] = false;
+        }
+
+        $locked->update($updates);
+
+        $this->fill($locked->only([
+            'consecutive_failures',
+            'last_error_at',
+            'health_status',
+            'is_active',
+        ]));
+        $this->syncOriginal();
+
+        return [$previousStatus, $newStatus];
+    }
+
+    private static function healthStatusAfterFailures(int $failures, HealthStatus $previousStatus): HealthStatus
+    {
+        $disabledAfter = Config::disabledAfter();
+
+        return match (true) {
+            $disabledAfter !== null && $failures >= $disabledAfter => HealthStatus::Disabled,
+            $failures >= Config::failingAfter() => HealthStatus::Failing,
+            $failures >= Config::degradedAfter() => HealthStatus::Degraded,
+            default => $previousStatus,
+        };
     }
 }

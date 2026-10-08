@@ -9,6 +9,7 @@ use Illuminate\Support\ServiceProvider;
 use Integrations\IntegrationsServiceProvider;
 use Orchestra\Testbench\TestCase;
 use Spatie\LaravelData\LaravelDataServiceProvider;
+use Spatie\LaravelData\Support\Creation\ValidationStrategy;
 
 abstract class IntegrationTestCase extends TestCase
 {
@@ -69,6 +70,9 @@ abstract class IntegrationTestCase extends TestCase
         $app['config']->set('queue.failed.database', 'testing');
 
         $app['config']->set('app.key', 'base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=');
+
+        // Consumers may set `Always`, so adapter tests must catch Data that fails validation there.
+        $app['config']->set('data.validation_strategy', ValidationStrategy::Always->value);
     }
 
     #[\Override]
