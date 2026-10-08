@@ -2,7 +2,6 @@
 /docker/             export-ignore
 /tests/              export-ignore
 /.gitignore          export-ignore
-/.coderabbit.yaml    export-ignore
 /captainhook.json    export-ignore
 /docker-compose.yml  export-ignore
 /phpstan.neon        export-ignore
