@@ -49,6 +49,7 @@ $client = new GitHubClient($integration);
 | | `->update($number, $title?, $body?, $idempotencyKey?)` | Edit an issue's title and/or body. At least one is required. Returns `?GitHubIssueData`. |
 | | `->timeline($number, $callback)` | Iterate timeline events (labels, assignments, etc.). |
 | `$client->comments()` | `->list($number, $callback)` | Iterate all comments on an issue. |
+| | `->since($since, $callback)` | Iterate the repository's issue and pull request comments updated since a timestamp, oldest updated first. Callback receives each comment's raw array. Unlike `issues()->since()`, does not skip PRs. Requires adapters 6.1.0 or later. |
 | | `->add($number, $body, $idempotencyKey?)` | Add a comment to an issue. Returns `?GitHubCommentData`. |
 | `$client->assets()` | `->download($url)` | Download an asset with token auth for GitHub-hosted URLs. |
 
@@ -77,6 +78,16 @@ $integration->updateSyncCursor('2024-05-01T00:00:00+00:00');
 ```
 
 Every incremental sync subtracts a 1-hour buffer from the cursor to catch issues updated between runs. The framework's cursor advance is monotonic, so re-presenting items inside that window can't regress progress. Consumers should still use [`upsertByExternalId()`](/features/id-mapping#upsert-by-external-id) in their listeners since overlap is expected.
+
+With `pocketarc/laravel-integrations-adapters` 6.1.0 or later, incremental syncs with a cursor also read the repository's comments feed via `$client->comments()->since()`, after listing issues. Both listings use the same `since` window (cursor minus one hour). The first sync without a cursor does not read the comments feed.
+
+For each parent issue missing from the issues list, the provider calls `$client->issues()->get()` once, even if several comments refer to it. It dispatches `GitHubIssueSynced` through the same session, with the issue's `updated_at` as the checkpoint and its issue number as the external ID. It skips issues already listed, comments whose `html_url` contains `/pull/`, and comments without a valid issue number in `issue_url`. A fetched issue is skipped if `get()` returns `null` or the response has a `pull_request` key.
+
+Each recovered issue logs a warning that it was missing from the issues list and is being synced from the comments feed. The warning context contains `integration_id`, `issue_number` and `since` (the start of the buffered window).
+
+This recovers issues when GitHub's issues list takes more than an hour to include a recently updated issue. By then, the issue's `updated_at` can fall before the sync window, so later runs miss it and its new comments. Recovery relies on the comments feed not having the same delay.
+
+The comments feed adds one request per incremental run with a cursor, plus pagination in batches of 100 comments. Each full page triggers another request, including an empty final page when the count is an exact multiple of 100. Each distinct missing issue adds one fetch, even if the fetched response is then skipped.
 
 Defaults: 5-minute sync interval, a 5,000-requests/hour rate limit (GitHub's authenticated budget), enforced as a fixed window. The adapter also feeds the [adaptive rate limiter](/core-concepts/rate-limiting#adaptive-rate-limits) from GitHub's `X-RateLimit-Remaining` / `X-RateLimit-Reset` headers, so when a token's hourly bucket runs out, subsequent requests are suppressed until the reset window passes.
 
