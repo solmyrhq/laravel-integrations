@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace Integrations\Casts;
 
 use Illuminate\Contracts\Database\Eloquent\CastsAttributes;
+use Illuminate\Contracts\Database\Eloquent\ComparesCastableAttributes;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Encryption\Encrypter;
 use Illuminate\Support\Facades\Crypt;
 use Integrations\IntegrationManager;
+use Integrations\Support\JsonEquivalence;
 use InvalidArgumentException;
 use Override;
 use Spatie\LaravelData\Data;
@@ -25,7 +28,7 @@ use function Safe\json_encode;
  *
  * @implements CastsAttributes<Data|array<string, mixed>|null, mixed>
  */
-class IntegrationCredentialCast implements CastsAttributes
+class IntegrationCredentialCast implements CastsAttributes, ComparesCastableAttributes
 {
     /**
      * @param  array<string, mixed>  $attributes
@@ -103,5 +106,33 @@ class IntegrationCredentialCast implements CastsAttributes
         }
 
         return Crypt::encryptString(json_encode($arrayValue, JSON_THROW_ON_ERROR));
+    }
+
+    /**
+     * Compares the decrypted JSON, so re-encrypting unchanged credentials is not a change.
+     */
+    #[Override]
+    public function compare(Model $model, string $key, mixed $firstValue, mixed $secondValue): bool
+    {
+        if (! is_string($firstValue) || ! is_string($secondValue)) {
+            return $firstValue === $secondValue;
+        }
+
+        try {
+            return JsonEquivalence::areEquivalent($this->decryptWithCurrentKeyOnly($firstValue), Crypt::decryptString($secondValue));
+        } catch (DecryptException) {
+            return false;
+        }
+    }
+
+    private function decryptWithCurrentKeyOnly(string $payload): string
+    {
+        $encrypter = app('encrypter');
+
+        if ($encrypter instanceof Encrypter && $encrypter->getPreviousKeys() !== []) {
+            return (clone $encrypter)->previousKeys([])->decryptString($payload);
+        }
+
+        return Crypt::decryptString($payload);
     }
 }

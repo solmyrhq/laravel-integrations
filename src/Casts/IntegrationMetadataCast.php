@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Integrations\Casts;
 
 use Illuminate\Contracts\Database\Eloquent\CastsAttributes;
+use Illuminate\Contracts\Database\Eloquent\ComparesCastableAttributes;
 use Illuminate\Database\Eloquent\Model;
 use Integrations\IntegrationManager;
+use Integrations\Support\JsonEquivalence;
 use Override;
 use Spatie\LaravelData\Data;
 use Throwable;
@@ -22,7 +24,7 @@ use function Safe\json_encode;
  *
  * @implements CastsAttributes<Data|array<string, mixed>|null, mixed>
  */
-class IntegrationMetadataCast implements CastsAttributes
+class IntegrationMetadataCast implements CastsAttributes, ComparesCastableAttributes
 {
     /**
      * @param  array<string, mixed>  $attributes
@@ -84,5 +86,18 @@ class IntegrationMetadataCast implements CastsAttributes
         }
 
         return json_encode($arrayValue, JSON_THROW_ON_ERROR);
+    }
+
+    /**
+     * Compares the decoded JSON, so MySQL's reformatting of a JSON column is not a change.
+     */
+    #[Override]
+    public function compare(Model $model, string $key, mixed $firstValue, mixed $secondValue): bool
+    {
+        if (! is_string($firstValue) || ! is_string($secondValue)) {
+            return $firstValue === $secondValue;
+        }
+
+        return JsonEquivalence::areEquivalent($firstValue, $secondValue);
     }
 }
