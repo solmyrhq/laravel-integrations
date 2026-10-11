@@ -44,6 +44,16 @@ export default defineConfig({
     ["meta", { name: "twitter:card", content: "summary_large_image" }],
     ["meta", { name: "twitter:site", content: "@pocketarc" }],
     ["meta", { name: "twitter:creator", content: "@pocketarc" }],
+
+    // tvsort.com proxies Plausible, because ad-blocker lists include
+    // plausible.io. The proxy serves only the trackers listed in a separate
+    // infrastructure configuration, so add a new tracker there too.
+    ["script", { async: "", src: "https://tvsort.com/js/pa-oh7Fe-g_1NS4cVXllZuEK.js" }],
+    [
+      "script",
+      {},
+      'window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};plausible.init({endpoint:"https://tvsort.com/api/event"})',
+    ],
   ],
 
   themeConfig: {
