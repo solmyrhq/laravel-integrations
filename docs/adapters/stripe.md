@@ -10,6 +10,14 @@ Part of the [`pocketarc/laravel-integrations-adapters`](https://github.com/solmy
 composer require pocketarc/laravel-integrations-adapters
 ```
 
+The adapter supports `stripe/stripe-php` `^20.0 || ^21.0 || ^22.0`. `StripeClient` does not set `stripe_version`, so API calls use the dated API version pinned by the installed stripe-php release. A newer SDK major can pin a newer API version.
+
+If stripe-php is only a transitive dependency, `composer update` can install a newer major and change the API version. Resource methods return Stripe's own objects, so renamed or removed fields can break application code at runtime. Require `stripe/stripe-php` in your own `composer.json` at the major you want to control API version upgrades. For example, to stay on major 22:
+
+```bash
+composer require stripe/stripe-php:^22.0
+```
+
 ## Setup
 
 ```php
@@ -105,7 +113,11 @@ Resource methods reject empty ids, non-positive amounts and limits, and blank id
 
 ## Webhooks
 
-Every verified delivery fires a `StripeWebhookReceived` event carrying the integration, event type, event id, and raw payload array. Listen for the event and route by type:
+`verifyWebhookSignature()` uses `\Stripe\WebhookSignature::verifyHeader()` with the stored `webhook_secret` and `\Stripe\Webhook::DEFAULT_TOLERANCE`. It checks the signature without parsing the body, so a correctly signed thin event or body that is not JSON passes verification. Missing or invalid `Stripe-Signature` headers, timestamps outside Stripe's time tolerance, and an empty webhook secret cause verification to fail.
+
+After verification, `handleWebhook()` fires a `StripeWebhookReceived` event only when the payload has non-empty strings for both `type` and `id`. Otherwise it logs a warning and returns `['status' => 'ignored', 'event' => $type ?? 'unknown']`, where `$type` is the non-empty string type or null. This is the handler result; the webhook endpoint queues verified deliveries for processing (see [Webhooks](/features/webhooks)).
+
+`StripeWebhookReceived` carries the integration, event type, event id, and raw payload array. Listen for the event and route by type:
 
 ```php
 Event::listen(StripeWebhookReceived::class, function (StripeWebhookReceived $event) {
@@ -117,7 +129,14 @@ Event::listen(StripeWebhookReceived::class, function (StripeWebhookReceived $eve
 });
 ```
 
-Signature verification uses `\Stripe\Webhook::constructEvent()` with the stored `webhook_secret`. Requests with missing or invalid signatures are rejected before the event fires.
+A thin event (`object: v2.core.event`) has no `data.object`. When it concerns an object, the payload's `related_object` gives the `id`, `type` and `url` of the object the listener must fetch from the API. `StripeEvents::retrieve()` (`$client->events()->retrieve()`) reads v1 events only (`GET /v1/events/{id}`), so it cannot fetch a thin event.
+
+For typed access to a snapshot event, construct the matching stripe-php object from `data.object`. For a `payment_intent.succeeded` listener:
+
+```php
+$payload = $event->payload;
+$paymentIntent = \Stripe\PaymentIntent::constructFrom($payload['data']['object']);
+```
 
 ## Health check
 
