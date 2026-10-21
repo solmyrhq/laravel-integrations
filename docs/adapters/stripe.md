@@ -10,9 +10,9 @@ Part of the [`pocketarc/laravel-integrations-adapters`](https://github.com/solmy
 composer require pocketarc/laravel-integrations-adapters
 ```
 
-The adapter supports `stripe/stripe-php` `^20.0 || ^21.0 || ^22.0`. `StripeClient` does not set `stripe_version`, so API calls use the dated API version pinned by the installed stripe-php release. A newer SDK major can pin a newer API version.
+The adapter requires `stripe/stripe-php` `^22.0`. `StripeClient` does not set `stripe_version`, so API calls use the dated API version pinned by the installed stripe-php release. A newer SDK major can pin a newer API version.
 
-If stripe-php is only a transitive dependency, `composer update` can install a newer major and change the API version. Resource methods return Stripe's own objects, so renamed or removed fields can break application code at runtime. Require `stripe/stripe-php` in your own `composer.json` at the major you want to control API version upgrades. For example, to stay on major 22:
+If stripe-php is only a transitive dependency, `composer update` can install a newer major when a future adapter release allows it, changing the API version. Resource methods return Stripe's own objects, so renamed or removed fields can break application code at runtime. Require `stripe/stripe-php` in your own `composer.json` at the major you want to control API version upgrades. For example, to stay on major 22:
 
 ```bash
 composer require stripe/stripe-php:^22.0
