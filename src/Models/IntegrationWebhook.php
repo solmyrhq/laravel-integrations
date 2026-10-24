@@ -121,7 +121,7 @@ class IntegrationWebhook extends Model
     }
 
     /**
-     * @param  array<model-property<IntegrationWebhook>, mixed>  $attributes
+     * @param  array<model-property<static>, mixed>  $attributes
      */
     private function finish(array $attributes): void
     {
@@ -135,8 +135,8 @@ class IntegrationWebhook extends Model
     }
 
     /**
-     * @param  list<array{model-property<IntegrationWebhook>, string, mixed}>  $conditions
-     * @param  array<model-property<IntegrationWebhook>, mixed>  $attributes
+     * @param  list<array{model-property<static>, string, mixed}>  $conditions
+     * @param  array<model-property<static>, mixed>  $attributes
      */
     private function transition(array $conditions, array $attributes): bool
     {
