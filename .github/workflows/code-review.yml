@@ -1,0 +1,25 @@
+name: Code Review
+
+on:
+    pull_request_target:
+        types: [opened, synchronize, ready_for_review, reopened]
+    workflow_dispatch:
+        inputs:
+            pr:
+                description: Pull request number
+                required: true
+
+permissions: {}
+
+jobs:
+    review:
+        uses: solmyrhq/actions/.github/workflows/review.yml@8dc59a41cdd965e01593341682f6f8999cafde96
+        permissions:
+            actions: read
+            contents: write
+            id-token: write
+            pull-requests: write
+        with:
+            pr: ${{ inputs.pr }}
+            guide: AGENTS.md
+        secrets: inherit
