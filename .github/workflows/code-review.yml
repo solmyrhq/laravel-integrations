@@ -13,7 +13,7 @@ permissions: {}
 
 jobs:
     review:
-        uses: solmyrhq/actions/.github/workflows/review.yml@8dc59a41cdd965e01593341682f6f8999cafde96
+        uses: solmyrhq/actions/.github/workflows/review.yml@f30abd24979db58ee2c26f75e5a700c34ee09ad7
         permissions:
             actions: read
             contents: write
