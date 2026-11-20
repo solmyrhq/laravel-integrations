@@ -1,6 +1,6 @@
 # Stripe adapter
 
-Wraps the [stripe/stripe-php](https://github.com/stripe/stripe-php) SDK. Covers payment intents, refunds, charges, customers, disputes, events, and webhook endpoints. Methods return Stripe's native typed objects (`\Stripe\Refund`, `\Stripe\PaymentIntent`, etc.), or `\Stripe\Collection<T>` for list endpoints.
+Wraps the [stripe/stripe-php](https://github.com/stripe/stripe-php) SDK. Covers payment intents (including saving cards and off-session charges), setup intents, payment methods, refunds, charges, customers, disputes, events, and webhook endpoints. Methods return Stripe's native typed objects (`\Stripe\Refund`, `\Stripe\PaymentIntent`, etc.), or `\Stripe\Collection<T>` for list endpoints.
 
 Part of the [`pocketarc/laravel-integrations-adapters`](https://github.com/solmyrhq/laravel-integrations-adapters) package.
 
@@ -55,13 +55,19 @@ $client = new StripeClient($integration);
 
 | Resource                        | Method                                                         | Description                                                                                              |
 |---------------------------------|----------------------------------------------------------------|----------------------------------------------------------------------------------------------------------|
-| `$client->paymentIntents()`     | `->create($amount, $currency, ..., $idempotencyKey?)`          | Create a PaymentIntent. Returns `\Stripe\PaymentIntent`.                                                 |
+| `$client->paymentIntents()`     | `->create($amount, $currency, ..., $idempotencyKey?, ...)`     | Create a PaymentIntent. Supports saving a card or confirming a saved method off-session; see [Saved cards and off-session payments](#saved-cards-and-off-session-payments). Returns `\Stripe\PaymentIntent`. |
 |                                 | `->retrieve($id)`                                              | Get a PaymentIntent by id.                                                                               |
 |                                 | `->update($id, ...)`                                           | Update editable fields.                                                                                  |
-|                                 | `->confirm($id, $paymentMethod?, $idempotencyKey?)`            | Confirm a PaymentIntent.                                                                                 |
+|                                 | `->confirm($id, $paymentMethod?, $idempotencyKey?, $offSession?, $returnUrl?, $setupFutureUsage?)` | Confirm a PaymentIntent, optionally off-session or with future usage. Returns `\Stripe\PaymentIntent`. |
 |                                 | `->capture($id, $amountToCapture?, $idempotencyKey?)`          | Capture an authorised PaymentIntent.                                                                     |
 |                                 | `->cancel($id, $cancellationReason?, $idempotencyKey?)`        | Cancel a PaymentIntent.                                                                                  |
 |                                 | `->list($customer?, $limit?)`                                  | Returns `\Stripe\Collection<\Stripe\PaymentIntent>`.                                                     |
+| `$client->setupIntents()`       | `->create($customer, $usage?, $automaticPaymentMethods?, $allowedPaymentMethodTypes?, $description?, $metadata?, $idempotencyKey?)` | Create a SetupIntent to save a payment method without charging it. Returns `\Stripe\SetupIntent`. |
+|                                 | `->retrieve($id)`                                              | Get a SetupIntent by id. Returns `\Stripe\SetupIntent`. |
+|                                 | `->cancel($id, $cancellationReason?, $idempotencyKey?)`          | Cancel a SetupIntent. Returns `\Stripe\SetupIntent`. |
+| `$client->paymentMethods()`     | `->retrieve($id)`                                              | Get a saved payment method. Returns `\Stripe\PaymentMethod`. |
+|                                 | `->detach($id, $idempotencyKey?)`                               | Detach a method from its customer. It cannot be used for payment or attached again. Returns `\Stripe\PaymentMethod`. |
+|                                 | `->listForCustomer($customer, $type?, $limit?)`                  | List a customer's methods, optionally filtered by type (e.g. `'card'`). Returns `\Stripe\Collection<\Stripe\PaymentMethod>`. |
 | `$client->refunds()`            | `->create($paymentIntent?, $charge?, ..., $idempotencyKey?)`   | Refund against exactly one of `paymentIntent` or `charge`.                                               |
 |                                 | `->retrieve($id)` / `->list($paymentIntent?, $charge?, $limit?)` | Returns `\Stripe\Refund` or `\Stripe\Collection<\Stripe\Refund>`.                                      |
 | `$client->charges()`            | `->retrieve($id)`                                              | Get a Charge.                                                                                            |
@@ -107,9 +113,96 @@ Stripe's `Request-Id` response header is captured on `integration_requests.provi
 IntegrationRequest::where('provider_request_id', 'req_ABC123')->first();
 ```
 
+## Saved cards and off-session payments
+
+Saved-card and off-session support, including the `setupIntents()` and `paymentMethods()` resources, requires `pocketarc/laravel-integrations-adapters` 7.1.0 or later.
+
+`paymentIntents()->create()` accepts these parameters after `$idempotencyKey`, in the order shown. Existing positional arguments keep their positions.
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `paymentMethod` | `null` | PaymentMethod id to use for the payment. Sent as `payment_method`. |
+| `allowedPaymentMethodTypes` | `null` | Explicit list of method types, such as `['card']`. Sent as `allowed_payment_method_types`, the stripe-php 22 replacement for `payment_method_types`. Requires `automaticPaymentMethods: false`. |
+| `setupFutureUsage` | `null` | `StripeSetupFutureUsage` enum value. Sent as `setup_future_usage` to save the method for future payments. |
+| `confirm` | `false` | Send `confirm: true` to confirm the intent during creation. Requires `paymentMethod`. |
+| `offSession` | `false` | Send `off_session: true` when the customer is not present. Requires `confirm: true`. |
+| `returnUrl` | `null` | Send `return_url` for the customer's return after redirect authentication. Requires `confirm: true`. |
+
+`paymentIntents()->confirm()` accepts `offSession`, `returnUrl` and `setupFutureUsage` after `$idempotencyKey`, with the same defaults. Its optional `paymentMethod` can be omitted to use the method already on the intent.
+
+`Integrations\Adapters\Stripe\Enums\StripeSetupFutureUsage` has two cases: `OffSession` (`'off_session'`) for future payments when the customer may be absent, and `OnSession` (`'on_session'`) for future payments only when the customer is present. The same enum supplies a SetupIntent's `usage`.
+
+### Saving without a charge
+
+`setupIntents()->create()` requires a customer id. It defaults to `usage: StripeSetupFutureUsage::OffSession` and `automaticPaymentMethods: true`. It also accepts `allowedPaymentMethodTypes`, `description`, `metadata` and `idempotencyKey`.
+
+```php
+$setupIntent = $client->setupIntents()->create(
+    customer: 'cus_123',
+    automaticPaymentMethods: false,
+    allowedPaymentMethodTypes: ['card'],
+    idempotencyKey: 'save-card:123',
+);
+```
+
+Confirm the SetupIntent in the browser with Stripe.js and `$setupIntent->client_secret`. Successful setup attaches the payment method to the customer without charging it. The adapter exposes `retrieve()` and `cancel()` for SetupIntents, but no `confirm()` method.
+
+### Saving during a payment
+
+`setupFutureUsage` on a PaymentIntent saves the method while taking a payment. With a customer supplied, Stripe attaches the method to that customer after confirmation and any required customer actions.
+
+```php
+use Integrations\Adapters\Stripe\Enums\StripeSetupFutureUsage;
+
+$paymentIntent = $client->paymentIntents()->create(
+    amount: 1900,
+    currency: 'usd',
+    customer: 'cus_123',
+    automaticPaymentMethods: false,
+    allowedPaymentMethodTypes: ['card'],
+    setupFutureUsage: StripeSetupFutureUsage::OffSession,
+);
+```
+
+Confirm the payment in the browser with Stripe.js and `$paymentIntent->client_secret`. `setupFutureUsage` can also be supplied to `paymentIntents()->confirm()` when confirming an existing intent.
+
+### Charging a saved card
+
+`paymentIntents()->create()` can charge a saved method with `customer`, `paymentMethod`, `confirm: true` and `offSession: true`:
+
+```php
+$paymentIntent = $client->paymentIntents()->create(
+    amount: 1900,
+    currency: 'usd',
+    customer: 'cus_123',
+    automaticPaymentMethods: false,
+    idempotencyKey: 'charge:123:attempt:1',
+    paymentMethod: 'pm_123',
+    allowedPaymentMethodTypes: ['card'],
+    confirm: true,
+    offSession: true,
+);
+```
+
+For an existing intent, `paymentIntents()->confirm($id, paymentMethod: 'pm_123', offSession: true)` confirms the saved method off-session.
+
+### Card declines
+
+If the bank declines an off-session charge through `create()` or `confirm()`, the SDK throws `\Stripe\Exception\CardException`. The exception's `getError()->payment_intent` holds the PaymentIntent, and `getDeclineCode()` gives the decline code. A decline code of `authentication_required` means the customer must return and confirm the payment themselves with Stripe.js using that intent's `client_secret`.
+
+Stripe returns card declines with HTTP 402. `StripeProvider::classifyFailure()` maps that status to `Integrations\Enums\FailureClass::Client`. The failure is [not retried](/core-concepts/retries#backoff-strategy) and does not count as a failure for the [circuit breaker or integration health](/advanced/circuit-breaker#what-counts-as-a-failure).
+
 ## Input validation
 
 Resource methods reject empty ids, non-positive amounts and limits, and blank idempotency keys up front with `InvalidArgumentException` rather than letting them hit Stripe. Pass `null` to omit an optional parameter; pass a non-empty value to include.
+
+Saved-card parameters also throw `InvalidArgumentException` before any request is sent in these cases:
+
+- `paymentIntents()->create()` receives `offSession: true` or a non-null `returnUrl` without `confirm: true`.
+- `paymentIntents()->create()` receives `confirm: true` without a `paymentMethod`, or an empty payment method id. `paymentIntents()->confirm()` allows the method to be omitted, but rejects an empty id when supplied.
+- Either `paymentIntents()->create()` or `setupIntents()->create()` receives a non-null `allowedPaymentMethodTypes` with `automaticPaymentMethods: true` (the default), or an empty list of allowed types.
+
+When `allowedPaymentMethodTypes` is supplied with `automaticPaymentMethods: false`, the adapter sends only `allowed_payment_method_types`, omitting `automatic_payment_methods`. When the list is `null`, it sends `automatic_payment_methods: ['enabled' => $automaticPaymentMethods]`.
 
 ## Webhooks
 
