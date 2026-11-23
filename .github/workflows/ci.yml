@@ -84,3 +84,16 @@ jobs:
           restore-keys: ${{ runner.os }}-composer-
       - run: composer install --no-interaction --prefer-dist
       - run: vendor/bin/phpunit
+
+  # The only check that the default branch's ruleset requires, by this name,
+  # so every other job must be in `needs`. The ruleset is in
+  # solmyrhq/gingerbread, infra/terraform/github-rulesets.tf.
+  ci-result:
+    name: CI result
+    needs: [lint, analyse, test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail when a job failed or was cancelled
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1
